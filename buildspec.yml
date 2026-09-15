@@ -9,6 +9,7 @@ env:
     RDS_USER: "flyway_mia"
 
 phases:
+
   install:
     commands:
       - echo "=== Installing Flyway ${FLYWAY_VERSION} ==="
@@ -25,7 +26,7 @@ phases:
       - aws s3 cp "s3://${FLYWAY_S3_BUCKET}/rds/global-bundle.pem" /tmp/rds-global-bundle.pem
 
       # Verify Flyway installation
-      - /tmp/flyway/flyway-${FLYWAY_VERSION}/flyway -version
+      - /tmp/flyway/flyway-${FLYWAY_VERSION}/flyway -v
 
   pre_build:
     commands:
