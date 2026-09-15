@@ -1,0 +1,64 @@
+version: 0.2
+
+env:
+  variables:
+    FLYWAY_VERSION: "13.6.0"
+    FLYWAY_S3_KEY: "flyway/13.6.0/flyway-commandline-13.6.0-linux-x64.tar.gz"
+    RDS_PORT: "5432"
+    RDS_DATABASE: "mia"
+    RDS_USER: "flyway_mia"
+
+phases:
+  install:
+    commands:
+      - echo "=== Installing Flyway ${FLYWAY_VERSION} ==="
+      - aws --version
+
+      # Download Flyway CLI from the deployment-tools S3 bucket
+      - mkdir -p /tmp/flyway
+      - aws s3 cp "s3://${FLYWAY_S3_BUCKET}/${FLYWAY_S3_KEY}" /tmp/flyway/flyway.tar.gz
+
+      # Extract Flyway
+      - tar -xzf /tmp/flyway/flyway.tar.gz -C /tmp/flyway
+
+      # Download Amazon RDS CA bundle
+      - aws s3 cp "s3://${FLYWAY_S3_BUCKET}/rds/global-bundle.pem" /tmp/rds-global-bundle.pem
+
+      # Verify Flyway installation
+      - /tmp/flyway/flyway-${FLYWAY_VERSION}/flyway -version
+
+  pre_build:
+    commands:
+      - echo "=== Generating RDS IAM authentication token ==="
+
+      # IAM authentication token is temporary and must not be stored
+      - export PGPASSWORD="$(aws rds generate-db-auth-token --hostname "${RDS_HOST}" --port "${RDS_PORT}" --region "${AWS_REGION}" --username "${RDS_USER}")"
+
+      - echo "=== Testing database connection with Flyway ==="
+
+      - >
+        /tmp/flyway/flyway-${FLYWAY_VERSION}/flyway
+        info
+        -locations="filesystem:migrations"
+        -url="jdbc:postgresql://${RDS_HOST}:${RDS_PORT}/${RDS_DATABASE}?sslmode=verify-full&sslrootcert=/tmp/rds-global-bundle.pem"
+        -user="${RDS_USER}"
+        -password="${PGPASSWORD}"
+
+  build:
+    commands:
+      - echo "=== Running Flyway migrations ==="
+
+      - >
+        /tmp/flyway/flyway-${FLYWAY_VERSION}/flyway
+        migrate
+        -locations="filesystem:migrations"
+        -url="jdbc:postgresql://${RDS_HOST}:${RDS_PORT}/${RDS_DATABASE}?sslmode=verify-full&sslrootcert=/tmp/rds-global-bundle.pem"
+        -user="${RDS_USER}"
+        -password="${PGPASSWORD}"
+
+      - echo "=== Flyway migration completed ==="
+
+  post_build:
+    commands:
+      - echo "=== Flyway migration finished ==="
+      - unset PGPASSWORD
